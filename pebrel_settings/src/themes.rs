@@ -437,6 +437,11 @@ pub(crate) fn fresh_terminal(name: ThemeName) -> TermTheme {
     // Preserve Paper's user-provided cursor and selection when reading old
     // preferences. New explicit theme choices still use the shared UI palette.
     let inherit_terminal_marks = name == ThemeName::Paper;
+    let (selection_foreground, selection_background) = match name {
+        ThemeName::Paper => (None, None),
+        ThemeName::CatppuccinMocha => (Some(palette.surface), Some(palette.accent)),
+        _ => (Some(palette.foreground), Some(palette.shell)),
+    };
     TermTheme {
         background: palette.surface,
         is_light: palette.is_light,
@@ -446,8 +451,8 @@ pub(crate) fn fresh_terminal(name: ThemeName) -> TermTheme {
             cursor: (!inherit_terminal_marks).then_some(palette.accent),
             cursor_text: (!inherit_terminal_marks).then_some(palette.surface),
             cursor_stroke: (!inherit_terminal_marks).then_some(palette.accent),
-            selection_foreground: (!inherit_terminal_marks).then_some(palette.foreground),
-            selection_background: (!inherit_terminal_marks).then_some(palette.shell),
+            selection_foreground,
+            selection_background,
         }),
         powerline: [
             palette.accent,
@@ -487,6 +492,16 @@ mod tests {
     }
 
     #[test]
+    fn mocha_terminal_selection_is_visible_and_readable() {
+        let terminal = ThemeName::CatppuccinMocha.term_theme();
+        let exact = terminal.exact.unwrap();
+        let background = exact.selection_background.unwrap();
+        let foreground = exact.selection_foreground.unwrap();
+        assert!(crate::wcag_contrast_ratio(background, terminal.background) >= 3.0);
+        assert!(crate::meets_wcag_aa(foreground, background));
+    }
+
+    #[test]
     fn fresh_themes_round_trip_and_keep_readable_foreground() {
         for name in [
             ThemeName::NordLight,
@@ -504,20 +519,11 @@ mod tests {
             let terminal = name.term_theme();
             assert_eq!(terminal.background, palette.surface);
             assert_eq!(terminal.is_light, palette.is_light);
-            let luma = |color: Rgb8| {
-                color
-                    .into_iter()
-                    .zip([0.2126, 0.7152, 0.0722])
-                    .map(|(c, weight)| {
-                        let c = f64::from(c) / 255.0;
-                        (if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) })
-                            * weight
-                    })
-                    .sum::<f64>()
-            };
-            let a = luma(palette.foreground);
-            let b = luma(palette.surface);
-            assert!((a.max(b) + 0.05) / (a.min(b) + 0.05) >= 7.0, "{}", name.prompt_name());
+            assert!(
+                crate::wcag_contrast_ratio(palette.foreground, palette.surface) >= 7.0,
+                "{}",
+                name.prompt_name()
+            );
         }
     }
 }
